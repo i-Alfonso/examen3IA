@@ -1,7 +1,11 @@
 import time
+import warnings
 import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.exceptions import ConvergenceWarning
+
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 from utils.preprocesamiento import cargar_datos
 
