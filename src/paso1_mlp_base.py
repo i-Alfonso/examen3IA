@@ -16,6 +16,8 @@ RO = "\033[91m"; AM = "\033[93m"; GR = "\033[90m"
 X_train, X_val, X_test, y_train, y_val, y_test = cargar_datos()
 
 # ─── Leer parámetros (del menú o valores por defecto) ────────────
+# main.py inyecta los parámetros como variables de entorno PARAM_*
+# para que el script sea ejecutable tanto desde el menú como directamente.
 _neuronas = int(os.environ.get("PARAM_HIDDEN_LAYERS", 100))
 _capas    = int(os.environ.get("PARAM_N_CAPAS",       2))
 _act      = os.environ.get("PARAM_ACTIVATION",        "relu")
@@ -23,8 +25,10 @@ _lr       = float(os.environ.get("PARAM_LR",          0.001))
 _alpha    = float(os.environ.get("PARAM_ALPHA",        0.0001))
 _max_iter = int(os.environ.get("PARAM_MAX_ITER",       300))
 
+# El MLP base usa hiperparámetros fijos (sin optimización) como línea base
+# para comparar contra GA y WolfGenetic en el reporte final.
 hiperparametros = {
-    "hidden_layer_sizes" : tuple([_neuronas] * _capas),
+    "hidden_layer_sizes" : tuple([_neuronas] * _capas),  # ej: (100, 100)
     "activation"         : _act,
     "learning_rate_init" : _lr,
     "alpha"              : _alpha,
@@ -47,10 +51,11 @@ print()
 
 modelo = MLPClassifier(**hiperparametros)
 t0 = time.time()
-modelo.fit(X_train, y_train)
+modelo.fit(X_train, y_train)   # entrena sobre el conjunto de entrenamiento
 dt = time.time() - t0
 
 # ─── Evaluar ─────────────────────────────────────────────────────
+# Se reportan validación y test por separado para detectar sobreajuste.
 acc_val  = accuracy_score(y_val,  modelo.predict(X_val))
 acc_test = accuracy_score(y_test, modelo.predict(X_test))
 
@@ -60,6 +65,7 @@ print(f"{AM}Accuracy validación{R} : {CY}{B}{acc_val*100:.2f}%{R}")
 print(f"{AM}Accuracy test      {R} : {VE}{B}{acc_test*100:.2f}%{R}")
 print()
 
+# Criterio mínimo para que el modelo base sea considerado funcional
 pasa = acc_val >= 0.75
 estado = f"{VE}{B}PASA{R}" if pasa else f"{RO}{B}FALLA{R}"
 print(f"Criterio (accuracy ≥ 0.75) : {estado}")

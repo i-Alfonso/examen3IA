@@ -18,6 +18,8 @@ RO = "\033[91m"; AM = "\033[93m"; GR = "\033[90m"
 X_train, X_val, X_test, y_train, y_val, y_test = cargar_datos()
 
 # ─── Configuración del GA ────────────────────────────────────────
+# GA autónomo (centro=None, radio=1.0): explora todo el hiperespacio sin guía del GWO.
+# Funciona como punto de comparación intermedio entre MLP base y WolfGenetic.
 CONFIG = {
     "n_individuos"  : int(_os.environ.get("PARAM_N_INDIVIDUOS",   15)),
     "n_generaciones": int(_os.environ.get("PARAM_N_GENERACIONES", 20)),
@@ -52,6 +54,8 @@ mejor, score_val, historial = ga_local(
 dt = time.time() - t0
 
 # ─── Decodificar mejor individuo ─────────────────────────────────
+# El GA devuelve floats; se aplican los mismos clamps que en funcion_objetivo
+# para que el MLP final use exactamente la misma configuración que fue evaluada.
 mejor_lr        = mejor[0]
 mejor_alpha     = mejor[1]
 mejor_neuronas  = max(10,  int(round(mejor[2])))
@@ -70,6 +74,9 @@ print(f"  {AM}max_iter  {R} : {CY}{mejor_max_iter}{R}")
 print(f"\n{AM}Accuracy validación{R} : {CY}{B}{(1 - score_val)*100:.2f}%{R}")
 
 # ─── Evaluar en test con MLP final ───────────────────────────────
+# Re-entrenamos un MLP limpio con los mejores hiperparámetros encontrados.
+# No se reutiliza el modelo interno de evaluar() porque ese entrenó solo
+# sobre X_train sin aprovechar X_val (que fue reservado para fitness).
 modelo_final = MLPClassifier(
     hidden_layer_sizes  = tuple([mejor_neuronas] * mejor_capas),
     learning_rate_init  = mejor_lr,

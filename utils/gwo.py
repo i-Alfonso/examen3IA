@@ -10,18 +10,29 @@ DIM = 6
 
 
 def _lobo_aleatorio(lb, ub):
+    # Inicialización aleatoria uniforme: todos los lobos arrancan sin sesgo
     return [random.uniform(lb[d], ub[d]) for d in range(DIM)]
 
 
 def _mover_lobo(lobo, alpha, beta, delta, a, lb, ub):
-    """Fórmula estándar del GWO: promedio de los 3 jalones de los líderes."""
+    """Ecuaciones de movimiento del GWO original (Mirjalili et al., 2014).
+
+    Para cada dimensión d:
+        A = 2·a·r1 - a          (coeficiente de movimiento, decrece con 'a')
+        C = 2·r2                (factor de peso aleatorio)
+        D = |C·lider[d] - lobo[d]|  (distancia escalada al líder)
+        jalón = lider[d] - A·D       (punto destino respecto a ese líder)
+
+    La nueva posición es el promedio de los 3 jalones (α, β, δ),
+    lo que combina la influencia de los tres mejores lobos.
+    """
     nueva_pos = []
     for d in range(DIM):
         jalon = 0.0
         for lider in [alpha, beta, delta]:
             r1 = random.random()
             r2 = random.random()
-            A  = 2 * a * r1 - a
+            A  = 2 * a * r1 - a   # cuando a→0, A∈[-1,1]: explotación local
             C  = 2 * r2
             D  = abs(C * lider[d] - lobo[d])
             jalon += lider[d] - A * D
@@ -31,7 +42,11 @@ def _mover_lobo(lobo, alpha, beta, delta, a, lb, ub):
 
 def _actualizar_jerarquia(alpha, alpha_score, beta, beta_score,
                           delta, delta_score, pos, score):
-    """Actualiza α, β, δ si el nuevo lobo es mejor que alguno de ellos."""
+    """Mantiene los 3 mejores lobos (α < β < δ) en orden estricto.
+
+    La jerarquía se actualiza desplazando en cascada:
+    si el nuevo supera al α, el anterior α pasa a β y el β a δ.
+    """
     if score < alpha_score:
         delta, delta_score = beta[:], beta_score
         beta,  beta_score  = alpha[:], alpha_score
@@ -75,31 +90,39 @@ def gwo(func_objetivo, n_lobos=10, max_iter=30, r_max=0.3,
     """
     # ── Inicializar manada ────────────────────────────────────────
     manada = [_lobo_aleatorio(lb, ub) for _ in range(n_lobos)]
+    # Evaluación inicial: cada lobo es un vector de hiperparámetros candidato
     scores = [func_objetivo(lobo) for lobo in manada]
 
+    # Inicializar jerarquía con el primer lobo para que los tres líderes
+    # apunten a posiciones válidas antes del primer ciclo de actualización
     alpha, alpha_score = manada[0][:], scores[0]
     beta,  beta_score  = manada[0][:], scores[0]
     delta, delta_score = manada[0][:], scores[0]
 
+    # Construir la jerarquía real con toda la manada inicial
     for i in range(n_lobos):
         alpha, alpha_score, beta, beta_score, delta, delta_score = \
             _actualizar_jerarquia(alpha, alpha_score, beta, beta_score,
                                   delta, delta_score, manada[i], scores[i])
 
     historial = {
-        "alpha_score" : [],   # mejor score por iteración
-        "scores_lobos": [],   # todos los scores por iteración (para boxplot)
+        "alpha_score" : [],   # mejor score (alpha) por iteración
+        "scores_lobos": [],   # score de cada lobo por iteración (para boxplot)
         "media"       : [],   # media de scores por iteración
         "mediana"     : [],   # mediana de scores por iteración
-        "radio"       : [],   # radio del GA local por iteración
+        "radio"       : [],   # radio del GA local (decrece con 'a')
     }
 
     # ── Bucle principal GWO ───────────────────────────────────────
     for t in range(max_iter):
+        # 'a' decrece linealmente de 2 a 0: controla balance exploración/explotación.
+        # Al inicio (a≈2) los lobos se mueven ampliamente; al final (a≈0) convergen.
         a     = 2.0 - t * (2.0 / max_iter)
-        radio = r_max * (a / 2.0)
+        radio = r_max * (a / 2.0)  # el radio del GA local también se contrae
 
-        # Evaluar todos los lobos en paralelo (un core por lobo)
+        # Cada lobo ejecuta su GA local en paralelo (n_jobs=-1 usa todos los cores).
+        # El GA refina la posición del lobo dentro de su vecindad antes de que el
+        # GWO lo mueva hacia los líderes — esto es la innovación "WolfGenetic".
         resultados = Parallel(n_jobs=-1)(
             delayed(ga_local)(
                 func_objetivo  = func_objetivo,
@@ -117,19 +140,21 @@ def gwo(func_objetivo, n_lobos=10, max_iter=30, r_max=0.3,
 
         scores_iter = []
         for i, (mejor_local, score_local, _) in enumerate(resultados):
+            # Actualizar la posición del lobo con el mejor encontrado por su GA
             manada[i] = mejor_local
             scores[i] = score_local
             scores_iter.append(score_local)
 
+            # Actualizar jerarquía tras la mejora local de cada lobo
             alpha, alpha_score, beta, beta_score, delta, delta_score = \
                 _actualizar_jerarquia(alpha, alpha_score, beta, beta_score,
                                       delta, delta_score, manada[i], scores[i])
 
-        # GWO mueve a cada lobo hacia los líderes
+        # GWO clásico: mover cada lobo hacia el centroide de los 3 líderes
         for i in range(n_lobos):
             manada[i] = _mover_lobo(manada[i], alpha, beta, delta, a, lb, ub)
 
-        # Registrar métricas
+        # Registrar métricas de esta iteración para las gráficas del paso 3
         historial["alpha_score"].append(alpha_score)
         historial["scores_lobos"].append(scores_iter[:])
         historial["media"].append(sum(scores_iter) / len(scores_iter))

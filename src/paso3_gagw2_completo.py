@@ -21,12 +21,14 @@ X_train, X_val, X_test, y_train, y_val, y_test = cargar_datos()
 ACTIVACIONES = {0: "relu", 1: "tanh", 2: "logistic"}
 
 # ─── Configuración WolfGenetic ───────────────────────────────────
+# WolfGenetic = GWO (exploración global) + GA local por lobo (explotación local).
+# n_lobos * max_iter * n_local * gen_locales ≈ nº total de MLPs entrenados.
 CONFIG = {
-    "n_lobos"    : int(_os.environ.get("PARAM_N_LOBOS",      10)),
-    "max_iter"   : int(_os.environ.get("PARAM_MAX_ITER",     30)),
-    "r_max"      : float(_os.environ.get("PARAM_R_MAX",      0.3)),
-    "n_local"    : int(_os.environ.get("PARAM_N_INDIVIDUOS",   8)),
-    "gen_locales": int(_os.environ.get("PARAM_N_GENERACIONES", 3)),
+    "n_lobos"    : int(_os.environ.get("PARAM_N_LOBOS",      10)),  # tamaño de la manada
+    "max_iter"   : int(_os.environ.get("PARAM_MAX_ITER",     30)),  # iteraciones del GWO
+    "r_max"      : float(_os.environ.get("PARAM_R_MAX",      0.3)), # radio inicial del GA local (30% del rango)
+    "n_local"    : int(_os.environ.get("PARAM_N_INDIVIDUOS",   8)), # individuos por GA local
+    "gen_locales": int(_os.environ.get("PARAM_N_GENERACIONES", 3)), # generaciones por GA local
     "p_cruce"    : float(_os.environ.get("PARAM_P_CRUCE",    0.8)),
     "p_mutacion" : float(_os.environ.get("PARAM_P_MUTACION", 0.2)),
 }
@@ -59,6 +61,9 @@ alpha, score_val, historial = gwo(
 dt = time.time() - t0
 
 # ─── Decodificar alpha ───────────────────────────────────────────
+# El lobo alpha representa los mejores hiperparámetros encontrados por WolfGenetic.
+# Se aplican los mismos clamps que en funcion_objetivo para coherencia con
+# la evaluación de fitness que fue usada durante la búsqueda.
 mejor_lr       = alpha[0]
 mejor_alpha    = alpha[1]
 mejor_neuronas = max(10,  int(round(alpha[2])))
@@ -77,6 +82,7 @@ print(f"  {AM}max_iter  {R} : {CY}{mejor_max_iter}{R}")
 print(f"\n{AM}Accuracy validación{R} : {CY}{B}{(1-score_val)*100:.2f}%{R}")
 
 # ─── Evaluar en test ─────────────────────────────────────────────
+# MLP final con los hiperparámetros del alpha: primer y único uso de X_test.
 modelo_final = MLPClassifier(
     hidden_layer_sizes  = tuple([mejor_neuronas] * mejor_capas),
     learning_rate_init  = mejor_lr,
@@ -91,6 +97,13 @@ modelo_final = MLPClassifier(
 modelo_final.fit(X_train, y_train)
 acc_test = accuracy_score(y_test, modelo_final.predict(X_test))
 print(f"{AM}Accuracy test      {R} : {VE}{B}{acc_test*100:.2f}%{R}")
+
+# ─── Gráficas (5 en total) ───────────────────────────────────────
+# 1: convergencia del alpha  — muestra mejora iteración a iteración
+# 2: radio por iteración     — confirma contracción del espacio de búsqueda
+# 3: boxplot de la manada    — distribución de accuracy en cada iteración
+# 4: tendencia central       — alpha vs media vs mediana de la manada
+# 5: matriz de confusión     — rendimiento por clase sobre el conjunto de test
 
 # ─── Gráfica 1: convergencia del alpha ───────────────────────────
 iters     = list(range(1, len(historial["alpha_score"]) + 1))

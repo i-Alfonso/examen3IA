@@ -1,18 +1,25 @@
 import random
 import numpy as np
 
-# Límites del hiperespacio (deben coincidir con config.yaml)
+# Límites del hiperespacio de búsqueda (6 dimensiones):
+#   [lr,      alpha,    neuronas, capas, activacion, max_iter]
 LB = [0.0001,   0.000001, 10,  1, 0, 100]
 UB = [0.1,      0.01,     500, 4, 2, 500]
-DIM = 6
+DIM = 6  # dimensiones del vector de hiperparámetros
 
 
 def _individuo_aleatorio(lb, ub):
+    # Muestreo uniforme en todo el hiperespacio (GA autónomo sin restricción de zona)
     return [random.uniform(lb[d], ub[d]) for d in range(DIM)]
 
 
 def _individuo_en_vecindad(centro, radio, lb, ub):
-    """Genera un individuo dentro del radio alrededor del centro."""
+    """Genera un individuo dentro del radio alrededor del centro.
+
+    El radio es relativo al rango de cada dimensión, por lo que una dimensión
+    de rango 490 (neuronas) y una de 0.0999 (lr) tienen la misma cobertura
+    proporcional.
+    """
     ind = []
     for d in range(DIM):
         rango = ub[d] - lb[d]
@@ -22,7 +29,11 @@ def _individuo_en_vecindad(centro, radio, lb, ub):
 
 
 def _torneo(poblacion, scores, k=2):
-    """Selecciona el mejor de k individuos elegidos al azar."""
+    """Selecciona el mejor de k individuos elegidos al azar (presión selectiva baja).
+
+    k=2 (torneo binario) equilibra exploración y explotación; k mayor
+    aumentaría la presión selectiva pero reduce diversidad.
+    """
     candidatos = random.sample(range(len(poblacion)), k)
     mejor = min(candidatos, key=lambda i: scores[i])
     return poblacion[mejor][:]
@@ -30,24 +41,32 @@ def _torneo(poblacion, scores, k=2):
 
 def _cruce(padre1, padre2):
     """
-    Cruce aritmético en dimensiones continuas (lr, alpha, max_iter)
-    Cruce uniforme en dimensiones discretas (neuronas, capas, activacion)
+    Cruce mixto adaptado a la naturaleza de cada dimensión:
+      - Continuas (lr, alpha, max_iter): cruce aritmético (mezcla convexa).
+      - Discretas  (neuronas, capas, activacion): cruce uniforme (elige uno u otro).
+
+    El cruce aritmético en enteros generaría valores intermedios sin sentido
+    para la arquitectura (¿2.7 capas?), de ahí la separación.
     """
     hijo = []
     discretas = {2, 3, 4}  # índices de dimensiones discretas
     for d in range(DIM):
         if d in discretas:
-            # uniforme: elige aleatoriamente de uno de los dos padres
+            # Hereda directamente de uno de los dos padres
             hijo.append(padre1[d] if random.random() < 0.5 else padre2[d])
         else:
-            # aritmético: mezcla proporcional
+            # Combinación convexa: α·p1 + (1-α)·p2
             alpha = random.random()
             hijo.append(alpha * padre1[d] + (1 - alpha) * padre2[d])
     return hijo
 
 
 def _mutar(individuo, radio, lb, ub, p_mutacion=0.2):
-    """Mutación gaussiana escalada por el radio actual."""
+    """Mutación gaussiana escalada por el radio actual.
+
+    Cuando el GWO contrae el radio en iteraciones avanzadas, la desviación
+    estándar de la gaussiana también se reduce → búsqueda local más fina.
+    """
     for d in range(DIM):
         if random.random() < p_mutacion:
             rango = ub[d] - lb[d]
@@ -82,24 +101,27 @@ def ga_local(func_objetivo, centro=None, radio=1.0,
         mejor_score     : error (1 - accuracy) del mejor individuo
         historial       : lista con el mejor score por generación
     """
-    # Inicializar población
+    # Inicializar población: en la vecindad del lobo (GWO) o en todo el espacio (GA autónomo)
     if centro is None:
         poblacion = [_individuo_aleatorio(lb, ub) for _ in range(n_individuos)]
     else:
         poblacion = [_individuo_en_vecindad(centro, radio, lb, ub)
                      for _ in range(n_individuos)]
-        poblacion[0] = centro[:]  # el centro siempre está en la población
+        # Garantiza que la posición actual del lobo siempre compita;
+        # sin esto podría descartarse incluso si ya es buena.
+        poblacion[0] = centro[:]
 
-    # Evaluar población inicial
     scores = [func_objetivo(ind) for ind in poblacion]
 
     mejor_idx = scores.index(min(scores))
     mejor_individuo = poblacion[mejor_idx][:]
     mejor_score = scores[mejor_idx]
-    historial = [mejor_score]
+    historial = [mejor_score]  # guarda el mejor score de cada generación
 
     for _ in range(n_generaciones):
-        nueva_poblacion = [mejor_individuo[:]]  # elitismo: el mejor siempre pasa
+        # Elitismo: el mejor individuo pasa directamente a la siguiente generación
+        # sin cruce ni mutación, garantizando que el score no retrocede.
+        nueva_poblacion = [mejor_individuo[:]]
         nueva_scores    = [mejor_score]
 
         while len(nueva_poblacion) < n_individuos:
@@ -109,7 +131,7 @@ def ga_local(func_objetivo, centro=None, radio=1.0,
             if random.random() < p_cruce:
                 hijo = _cruce(padre1, padre2)
             else:
-                hijo = padre1[:]
+                hijo = padre1[:]  # reproducción sin cruce (clonación del padre1)
 
             hijo = _mutar(hijo, radio, lb, ub, p_mutacion)
             score_hijo = func_objetivo(hijo)
@@ -120,6 +142,8 @@ def ga_local(func_objetivo, centro=None, radio=1.0,
         poblacion = nueva_poblacion
         scores    = nueva_scores
 
+        # Actualizar el mejor global solo si hay mejora (el elitismo ya lo preserva,
+        # pero este bloque registra el historial correctamente).
         mejor_idx = scores.index(min(scores))
         if scores[mejor_idx] < mejor_score:
             mejor_score     = scores[mejor_idx]

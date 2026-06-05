@@ -9,10 +9,12 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 from utils.preprocesamiento import cargar_datos
 
-# Cargamos los datos una sola vez al importar el módulo
+# Carga única al importar el módulo: evita releer disco en cada llamada a evaluar(),
+# que ocurre cientos de veces durante la optimización (GA/GWO).
 X_train, X_val, X_test, y_train, y_val, y_test = cargar_datos()
 
-# Mapeo de entero a nombre de activación
+# El GA/GWO codifican la activación como entero continuo [0, 2].
+# El % 3 garantiza que valores fuera del rango sigan siendo válidos.
 _ACTIVACIONES = {0: "relu", 1: "tanh", 2: "logistic"}
 
 
@@ -32,19 +34,25 @@ def evaluar(individuo):
     Returns:
         error : float  (0.0 = perfecto, 1.0 = pésimo)
     """
+    # Decodificación: GA/GWO trabajan con floats continuos; el MLP necesita
+    # enteros para neuronas/capas y string para la función de activación.
     lr        = float(individuo[0])
     alpha     = float(individuo[1])
-    neuronas  = max(10,  int(round(individuo[2])))
-    capas     = max(1,   min(4, int(round(individuo[3]))))
+    neuronas  = max(10,  int(round(individuo[2])))          # mínimo 10 neuronas por capa
+    capas     = max(1,   min(4, int(round(individuo[3]))))  # entre 1 y 4 capas ocultas
     activacion = _ACTIVACIONES[int(round(individuo[4])) % 3]
     max_iter  = max(100, min(500, int(round(individuo[5]))))
 
+    # Arquitectura uniforme: todas las capas tienen el mismo nº de neuronas.
+    # Ej: neuronas=100, capas=2  →  hidden_layer_sizes=(100, 100)
     modelo = MLPClassifier(
         hidden_layer_sizes = tuple([neuronas] * capas),
         learning_rate_init = lr,
         alpha              = alpha,
         activation         = activacion,
         max_iter           = max_iter,
+        # Early stopping interno del MLP (sobre fracción del train),
+        # independiente de la validación externa usada para calcular el fitness.
         early_stopping     = True,
         validation_fraction= 0.1,
         n_iter_no_change   = 10,
@@ -52,8 +60,10 @@ def evaluar(individuo):
     )
 
     modelo.fit(X_train, y_train)
+    # El fitness se evalúa sobre X_val para que X_test quede completamente
+    # reservado al reporte final y no influya en la búsqueda.
     accuracy = accuracy_score(y_val, modelo.predict(X_val))
-    return 1.0 - accuracy
+    return 1.0 - accuracy  # minimizar error ≡ maximizar accuracy
 
 
 if __name__ == "__main__":

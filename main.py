@@ -6,15 +6,18 @@ import time
 import signal
 
 # ─── Colores ANSI ────────────────────────────────────────────────
-R  = "\033[0m"
-B  = "\033[1m"
-AZ = "\033[94m"
-CY = "\033[96m"
-VE = "\033[92m"
-RO = "\033[91m"
-AM = "\033[93m"
-GR = "\033[90m"
+# Constantes de escape para colorear la salida en terminal.
+# Se usan en f-strings como: f"{AZ}{B}texto{R}" (azul+negrita, luego reset)
+R  = "\033[0m"   # reset — vuelve al color por defecto
+B  = "\033[1m"   # negrita
+AZ = "\033[94m"  # azul claro
+CY = "\033[96m"  # cian
+VE = "\033[92m"  # verde
+RO = "\033[91m"  # rojo
+AM = "\033[93m"  # amarillo
+GR = "\033[90m"  # gris
 
+# Se inyecta PYTHONPATH="." para que los scripts en src/ puedan importar utils/
 ENV = {**os.environ, "PYTHONPATH": "."}
 
 # ─── Parámetros por defecto ───────────────────────────────────────
@@ -111,12 +114,16 @@ def correr(nombre, archivo, params=None, prod=False):
 
     env = dict(ENV)
     if params:
+        # Los parámetros se pasan como variables de entorno PARAM_<NOMBRE>
+        # porque cada paso corre en un subproceso separado y no comparte estado.
         for k, v in params.items():
             env[f"PARAM_{k.upper()}"] = str(v)
 
     cancelado = False
 
     if prod:
+        # Modo producción (opción 4): output en tiempo real sin spinner,
+        # útil para pipelines automáticos donde se quiere ver el progreso al vuelo.
         proceso = subprocess.Popen([sys.executable, "-u", archivo], env=env)
         try:
             proceso.wait()
@@ -128,6 +135,8 @@ def correr(nombre, archivo, params=None, prod=False):
                 proceso.kill()
             cancelado = True
     else:
+        # Modo interactivo: muestra spinner mientras el subproceso arranca,
+        # luego lo reemplaza con el output real en cuanto llega la primera línea.
         stop = threading.Event()
         hilo = threading.Thread(target=_spinner, args=(nombre, stop), daemon=True)
         hilo.start()
@@ -136,7 +145,7 @@ def correr(nombre, archivo, params=None, prod=False):
             [sys.executable, "-u", archivo],
             env=env,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.STDOUT,  # stderr redirigido a stdout para capturar todo
             text=True
         )
         primera = True
@@ -144,6 +153,8 @@ def correr(nombre, archivo, params=None, prod=False):
         try:
             for linea in proceso.stdout:
                 if primera:
+                    # Esperar al menos 1s para que el spinner se vea; sin esto
+                    # desaparece instantáneamente si el script arranca muy rápido.
                     tiempo_minimo = 1.0
                     restante = tiempo_minimo - (time.time() - inicio)
                     if restante > 0:
