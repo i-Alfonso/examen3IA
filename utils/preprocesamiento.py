@@ -1,85 +1,89 @@
+"""
+preprocesamiento.py — Carga del dataset Avila y construcción de la muestra
+
+Responsabilidad única: leer Avila, escalarlo y partirlo en train/val/test.
+Todo lo que viene después (red, GA, GWO) recibe los datos desde aquí.
+
+El split y el escalador se controlan desde config.yaml.
+"""
 import os
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import RobustScaler, StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 
-_TRAIN_PATH = os.path.join(os.path.dirname(__file__), "..", "data2", "avila", "avila-tr.txt")
-_TEST_PATH  = os.path.join(os.path.dirname(__file__), "..", "data2", "avila", "avila-ts.txt")
+from utils.config import CONFIG
 
+# Rutas a los dos archivos originales de Avila (UCI)
+_DIR = os.path.join(os.path.dirname(__file__), "..", "data2", "avila")
+_TR  = os.path.join(_DIR, "avila-tr.txt")
+_TS  = os.path.join(_DIR, "avila-ts.txt")
+
+# LabelEncoder compartido (letras A-Y → enteros 0-11)
 _le = LabelEncoder()
 
 
-def cargar_datos(val_size=0.2, random_state=42):
+def cargar_datos():
     """
-    Carga Avila Bible desde los splits originales de UCI y separa validación.
+    Carga Avila y devuelve el split de 3 vías ya escalado.
 
-    Columnas del dataset:
-        X → F1..F10  (características paleográficas, ya Z-normalizadas)
-        y → clase    (copista: A,B,C,D,E,F,G,H,I,W,X,Y → codificado 0-11)
-
-    Notas:
-        - StandardScaler aplicado para comprimir outliers (F2 max=386, F6, F7, F9)
-        - Clase B tiene solo 5 instancias → split estratificado es crítico
-        - Desbalance extremo: A=4286, B=5 → accuracy base esperado ~70-80%
-
-    Splits resultantes:
-        Train (8,344) → entrena el MLP dentro de funcion_objetivo
-        Val   (2,086) → evalúa fitness (GA y GWO nunca ven el test)
-        Test (10,437) → solo se usa al final para reportar accuracy final
+    Proceso:
+      1. Junta los dos archivos originales (avila-tr + avila-ts = 20,867 filas).
+      2. Codifica las clases (letras de copista → enteros).
+      3. Hace un split aleatorio ESTRATIFICADO según las proporciones
+         de config.yaml (por defecto 70/15/15). Estratificar es clave
+         por el fuerte desbalance del dataset (la clase B tiene ~10 casos).
+      4. Escala con RobustScaler (mediana + IQR), que resiste los valores
+         atípicos extremos que tiene Avila en varias columnas.
+         El escalador se ajusta SOLO con train y se aplica a val y test,
+         para no filtrar información entre conjuntos.
 
     Returns:
-        X_train, X_val, X_test : arrays normalizados (StandardScaler)
+        X_train, X_val, X_test : arrays escalados
         y_train, y_val, y_test : etiquetas (enteros 0-11)
     """
-    df_train = pd.read_csv(_TRAIN_PATH, header=None)
-    df_test  = pd.read_csv(_TEST_PATH,  header=None)
+    cfg    = CONFIG["dataset"]
+    seed   = cfg["random_state"]
+    p_test = cfg["test"]
+    p_val  = cfg["val"]
 
-    X_tv   = df_train.iloc[:, :-1].values.astype(float)
-    y_tv   = df_train.iloc[:, -1].values
-    X_test = df_test.iloc[:, :-1].values.astype(float)
-    y_test = df_test.iloc[:, -1].values
+    # 1-2. Cargar y juntar ambos archivos, codificar clases
+    df = pd.concat([
+        pd.read_csv(_TR, header=None),
+        pd.read_csv(_TS, header=None)
+    ], ignore_index=True)
+    X = df.iloc[:, :-1].values.astype(float)
+    y = _le.fit_transform(df.iloc[:, -1].values)
 
-    # Codificar clases (letras → enteros)
-    _le.fit(np.concatenate([y_tv, y_test]))
-    y_tv   = _le.transform(y_tv).astype(int)
-    y_test = _le.transform(y_test).astype(int)
-
-    # Separar validación (estratificado — crítico por clase B con 5 instancias)
+    # 3. Split estratificado en dos pasos
+    #    Paso A: separar test
+    X_resto, X_test, y_resto, y_test = train_test_split(
+        X, y, test_size=p_test, random_state=seed, stratify=y)
+    #    Paso B: separar val del resto (proporción relativa al resto)
+    val_rel = p_val / (1.0 - p_test)
     X_train, X_val, y_train, y_val = train_test_split(
-        X_tv, y_tv,
-        test_size=val_size,
-        random_state=random_state,
-        stratify=y_tv
-    )
+        X_resto, y_resto, test_size=val_rel, random_state=seed, stratify=y_resto)
 
-    # StandardScaler para comprimir outliers (F2 max=386, F6, F7, F9)
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)  # aprende y calcula
-    X_val   = scaler.transform(X_val)        # solo aplica lo calculado
-    X_test  = scaler.transform(X_test)       # solo aplica lo calculado
+    # 4. Escalado (robust o standard según config)
+    scaler = RobustScaler() if cfg["scaler"] == "robust" else StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_val   = scaler.transform(X_val)
+    X_test  = scaler.transform(X_test)
 
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
 def clases_nombres():
-    """Retorna los nombres originales de las clases (A, B, C...)."""
+    """Nombres originales de las clases (las letras de los copistas)."""
     return list(_le.classes_)
 
 
 if __name__ == "__main__":
     X_train, X_val, X_test, y_train, y_val, y_test = cargar_datos()
-
-    print("Dataset: Avila Bible")
-    print(f"\nSplit de datos:")
+    print(f"Dataset: {CONFIG['dataset']['nombre']}")
     print(f"  Train : {X_train.shape}")
     print(f"  Val   : {X_val.shape}")
     print(f"  Test  : {X_test.shape}")
-    print(f"\nTotal : {len(y_train) + len(y_val) + len(y_test)} instancias")
-    print(f"\nClases: {clases_nombres()}")
-    print(f"\nMedia  post-scaler (train): {X_train.mean():.6f}  (debe ser ≈ 0)")
-    print(f"Std   post-scaler (train): {X_train.std():.6f}   (debe ser ≈ 1)")
-    print(f"\nDistribución train:")
-    for i, nombre in enumerate(clases_nombres()):
-        n = (y_train == i).sum()
-        print(f"  {nombre}: {n}")
+    print(f"  Total : {len(y_train) + len(y_val) + len(y_test)} instancias")
+    print(f"  Clases: {clases_nombres()}")
+    print(f"  Escalador: {CONFIG['dataset']['scaler']}")
+    print(f"\n  Media train post-escala: {X_train.mean():.4f}")

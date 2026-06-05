@@ -1,0 +1,54 @@
+============================================================
+  SIMULACIÓN 2 — WOLFGENETIC (GWO + GA local)
+  Fecha: 20260604_224741
+============================================================
+
+CONFIGURACIÓN INICIAL
+  Dataset : Avila  (split 70/15/15, scaler=robust)
+  Semilla : 42
+
+ESPACIO DE BÚSQUEDA
+  learning_rate_init : [0.0001, 0.05]
+  alpha              : [1e-06, 0.1]
+  neuronas           : [10, 350]
+  capas              : [1, 4]
+  max_iter (red)     : [150, 400]
+
+PARÁMETROS DEL ALGORITMO
+  Representación GA  → binario
+  GWO  → lobos=8, iteraciones=10, r_max=0.3
+  GA   → individuos=12, generaciones=8, p_cruce=0.85, p_mutacion=0.25
+  Early stopping GA  → paciencia=3
+  MLPs máximos       → 7680  (menos con early stopping)
+
+  Train=14606 | Val=3130 | Test=3131 | Clases=12
+
+[22:47:41] Iniciando optimización...
+Iter   1/10 | a=2.000 | radio=0.3000 | alpha=0.9962 | media=0.9812
+Iter   2/10 | a=1.800 | radio=0.2700 | alpha=0.9971 | media=0.9813
+Iter   3/10 | a=1.600 | radio=0.2400 | alpha=0.9978 | media=0.9961
+Iter   4/10 | a=1.400 | radio=0.2100 | alpha=0.9978 | media=0.9969
+Iter   5/10 | a=1.200 | radio=0.1800 | alpha=0.9981 | media=0.9958
+Iter   6/10 | a=1.000 | radio=0.1500 | alpha=0.9981 | media=0.9933
+Iter   7/10 | a=0.800 | radio=0.1200 | alpha=0.9981 | media=0.9966
+Iter   8/10 | a=0.600 | radio=0.0900 | alpha=0.9987 | media=0.9974
+Iter   9/10 | a=0.400 | radio=0.0600 | alpha=0.9987 | media=0.9975
+Iter  10/10 | a=0.200 | radio=0.0300 | alpha=0.9987 | media=0.9974
+
+[10:18:27] Optimización terminada (690.0 min)
+
+MEJORES HIPERPARÁMETROS ENCONTRADOS
+  learning_rate_init  : 0.0011232942855393749
+  alpha               : 0.05232260173348983
+  neuronas            : 302
+  capas               : 4
+  activacion          : tanh
+  max_iter            : 261
+
+RESULTADOS (sobre test)
+  Accuracy          : 99.84%
+  Balanced accuracy : 99.92%
+
+[10:18:27] Datos guardados → /home/je.alfonso/Documents/Alfonso/Buap/2Semestre/IA/examen3/utils/../resultados/wolfgenetic/datos_20260604_224741.json
+
+[10:18:27] Simulación WolfGenetic completada.

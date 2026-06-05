@@ -1,9 +1,10 @@
 import random
 import numpy as np
 
-# Límites del hiperespacio (deben coincidir con config.yaml)
-LB = [0.0001,   0.000001, 10,  1, 0, 100]
-UB = [0.1,      0.01,     500, 4, 2, 500]
+from utils.config import limites_busqueda
+
+# Límites del hiperespacio leídos desde config.yaml
+LB, UB = limites_busqueda()
 DIM = 6
 
 
@@ -59,7 +60,7 @@ def _mutar(individuo, radio, lb, ub, p_mutacion=0.2):
 def ga_local(func_objetivo, centro=None, radio=1.0,
              lb=LB, ub=UB,
              n_individuos=8, n_generaciones=3,
-             p_cruce=0.8, p_mutacion=0.2):
+             p_cruce=0.8, p_mutacion=0.2, paciencia=None):
     """
     Algoritmo Genético local.
 
@@ -73,9 +74,12 @@ def ga_local(func_objetivo, centro=None, radio=1.0,
         radio         : radio de vecindad relativo al rango de cada dimensión
         lb / ub       : límites del hiperespacio
         n_individuos  : tamaño de la población
-        n_generaciones: número de generaciones
+        n_generaciones: número de generaciones (máximo)
         p_cruce       : probabilidad de cruce
         p_mutacion    : probabilidad de mutación por gen
+        paciencia     : early stopping — si el mejor score no mejora en
+                        'paciencia' generaciones seguidas, el GA se detiene.
+                        None = sin early stopping (corre todas las generaciones).
 
     Returns:
         mejor_individuo : vector de 6 hiperparámetros
@@ -97,6 +101,8 @@ def ga_local(func_objetivo, centro=None, radio=1.0,
     mejor_individuo = poblacion[mejor_idx][:]
     mejor_score = scores[mejor_idx]
     historial = [mejor_score]
+
+    sin_mejora = 0  # generaciones consecutivas sin mejorar (para early stopping)
 
     for _ in range(n_generaciones):
         nueva_poblacion = [mejor_individuo[:]]  # elitismo: el mejor siempre pasa
@@ -124,8 +130,15 @@ def ga_local(func_objetivo, centro=None, radio=1.0,
         if scores[mejor_idx] < mejor_score:
             mejor_score     = scores[mejor_idx]
             mejor_individuo = poblacion[mejor_idx][:]
+            sin_mejora = 0
+        else:
+            sin_mejora += 1
 
         historial.append(mejor_score)
+
+        # Early stopping: corta generaciones que ya no mejoran
+        if paciencia is not None and sin_mejora >= paciencia:
+            break
 
     return mejor_individuo, mejor_score, historial
 

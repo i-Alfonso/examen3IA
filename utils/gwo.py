@@ -1,12 +1,18 @@
 import random
-import math
 from joblib import Parallel, delayed
 
 from utils.ga_local import ga_local
+from utils.ga_local_bin import ga_local_bin
+from utils.config import limites_busqueda, CONFIG
 
-LB = [0.0001,   0.000001, 10,  1, 0, 100]
-UB = [0.1,      0.01,     500, 4, 2, 500]
+# Límites del hiperespacio leídos desde config.yaml
+LB, UB = limites_busqueda()
 DIM = 6
+
+# El tipo de GA local se elige desde config.yaml ("real" o "binario").
+# Ambos tienen la misma interfaz, así que son intercambiables.
+_TIPO_GA = CONFIG["wolfgenetic"].get("tipo_ga", "real")
+_GA = ga_local_bin if _TIPO_GA == "binario" else ga_local
 
 
 def _lobo_aleatorio(lb, ub):
@@ -46,7 +52,7 @@ def _actualizar_jerarquia(alpha, alpha_score, beta, beta_score,
 
 def gwo(func_objetivo, n_lobos=10, max_iter=30, r_max=0.3,
         n_local=8, gen_locales=3, p_cruce=0.8, p_mutacion=0.2,
-        lb=LB, ub=UB, verbose=True):
+        lb=LB, ub=UB, verbose=True, paciencia_ga=None):
     """
     Grey Wolf Optimizer con GA local por lobo (WolfGenetic).
 
@@ -99,9 +105,10 @@ def gwo(func_objetivo, n_lobos=10, max_iter=30, r_max=0.3,
         a     = 2.0 - t * (2.0 / max_iter)
         radio = r_max * (a / 2.0)
 
-        # Evaluar todos los lobos en paralelo (un core por lobo)
+        # Evaluar todos los lobos en paralelo (un core por lobo).
+        # _GA es ga_local (real) o ga_local_bin (binario) según config.yaml.
         resultados = Parallel(n_jobs=-1)(
-            delayed(ga_local)(
+            delayed(_GA)(
                 func_objetivo  = func_objetivo,
                 centro         = manada[i],
                 radio          = radio,
@@ -111,6 +118,7 @@ def gwo(func_objetivo, n_lobos=10, max_iter=30, r_max=0.3,
                 n_generaciones = gen_locales,
                 p_cruce        = p_cruce,
                 p_mutacion     = p_mutacion,
+                paciencia      = paciencia_ga,
             )
             for i in range(n_lobos)
         )

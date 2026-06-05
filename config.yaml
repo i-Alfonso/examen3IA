@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════════
+#  CONFIGURACIÓN DEL PROYECTO — WolfGenetic
+#  Este archivo controla TODOS los parámetros de las simulaciones.
+#  Para cambiar cómo corre el experimento, edita aquí (no el código).
+#  main.py lee este archivo al arrancar.
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── Datos y preprocesamiento ──────────────────────────────────────
+dataset:
+  nombre: "Avila"
+  # Proporciones del split (deben sumar 1.0). Es estratificado.
+  train: 0.70
+  val:   0.15
+  test:  0.15
+  scaler: "robust"        # "robust" (resiste outliers) o "standard"
+  random_state: 42        # semilla para reproducibilidad
+
+# ─── Espacio de búsqueda de hiperparámetros ────────────────────────
+#  Es el rango donde el GA y el GWO buscan. Acotado a propósito:
+#  redes > 350 neuronas resultaron lentas y peores en las pruebas.
+espacio_busqueda:
+  learning_rate_init: [0.0001, 0.05]
+  alpha:              [0.000001, 0.1]
+  neuronas:           [10, 350]
+  capas:              [1, 4]
+  # activacion: 0=relu, 1=tanh, 2=logistic  (rango fijo 0-2)
+  max_iter:           [150, 400]   # épocas de entrenamiento de la red
+
+# ─── Simulación 1: Red neuronal pura (MLP base) ────────────────────
+#  Hiperparámetros FIJOS, sin optimizar. Es la referencia.
+mlp_puro:
+  hidden_layer_sizes: [100, 100]
+  activation: "relu"
+  learning_rate_init: 0.001
+  alpha: 0.0001
+  max_iter: 300
+
+# ─── Simulación 2: WolfGenetic (GWO + GA local) ────────────────────
+wolfgenetic:
+  # Tipo de representación del genético local:
+  #   "real"    → cruza aritmética + mutación gaussiana (mejor precisión)
+  #   "binario" → codificación binaria con código Gray
+  tipo_ga: "binario"
+
+  # Grey Wolf Optimizer (coordinador global)
+  n_lobos:     8
+  max_iter:    10        # iteraciones del GWO
+  r_max:       0.3       # radio máximo de la vecindad
+
+  # Genético local (se ejecuta dentro de cada lobo)
+  n_local:     12        # individuos de la población del GA
+  gen_locales: 8         # generaciones del GA
+  p_cruce:     0.85
+  p_mutacion:  0.25
+  paciencia:   3         # early stopping del GA (generaciones sin mejora)

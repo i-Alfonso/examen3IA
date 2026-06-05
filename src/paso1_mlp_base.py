@@ -70,7 +70,7 @@ fig, ax = plt.subplots(figsize=(10, 8))
 ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clases_nombres()).plot(
     ax=ax, colorbar=True, cmap="Blues"
 )
-ax.set_title("Matriz de Confusión — MLP Base (Paso 1)\nAvila Bible")
+ax.set_title("Matriz de Confusión — MLP Base (Paso 1)\nSensorless Drive")
 plt.tight_layout()
 plt.savefig("graficas/mlp_base/matriz_confusion_base.png", dpi=150)
 plt.close()
